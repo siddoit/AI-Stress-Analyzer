@@ -58,7 +58,7 @@ class StressBrain:
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         
         # Load Emotion (Your original code)
-        local_pt = 'enet_b0_8_best_vgaf.pt'
+        local_pt = 'Models/enet_b0_8_best_vgaf.pt'
         cache_path = os.path.join(str(Path.home()), '.hsemotion', local_pt)
         if not os.path.exists(cache_path) and os.path.exists(local_pt):
             os.makedirs(os.path.dirname(cache_path), exist_ok=True)
@@ -70,7 +70,7 @@ class StressBrain:
 
         # Load Posture
         try:
-            self.posture_model = tf.keras.models.load_model('my_posture_model.h5')
+            self.posture_model = tf.keras.models.load_model('Models/my_posture_model.h5')
             self.pos_classes = ['Good', 'Slouching', 'Leaning']
         except: self.posture_model = None
 

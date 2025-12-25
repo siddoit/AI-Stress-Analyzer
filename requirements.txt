@@ -1,0 +1,7 @@
+torch
+torchvision
+timm==0.4.5
+hsemotion==0.3.0
+opencv-python
+mediapipe
+numpy

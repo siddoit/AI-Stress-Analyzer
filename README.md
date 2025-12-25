@@ -22,15 +22,15 @@ The application utilizes multi-threading to ensure high performance, running com
 ```text
 NeuralHealth/
 │
-├── README.md               <-- You are here
+├── README.md               
 ├── launch.py               <-- Main Application Launcher
 ├── requirements.txt        <-- Dependencies list
 │
-├── models/                 <-- AI Brains
+├── models/                 
 │   ├── enet_b0_8_best_vgaf.pt
 │   └── my_posture_model.h5
 │
-└── src/                    <-- Core System Code
+└── src/                    
     ├── db.py               <-- Database Handler
     ├── emo.py              <-- Emotion Logic
     ├── posture_check.py    <-- Posture Logic
@@ -98,7 +98,7 @@ Before running the system, ensure you have:
 * Ensure the Baud Rate is set to `115200`.
 
 **Camera opens but closes immediately.**
-* Verify that `models/enet_b0_8_best_vgaf.pt` exists. If not, the system cannot load the AI brain.
+* Verify that `models/enet_b0_8_best_vgaf.pt` exists. If not, the system cannot load the model.
 
 ---
 

@@ -1,4 +1,4 @@
-# 🧠 NeuralHealth: AI Stress & Ergonomic Analyzer
+#  NeuralHealth: AI Stress & Ergonomic Analyzer
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue) ![TensorFlow](https://img.shields.io/badge/TensorFlow-GPU-orange) ![Status](https://img.shields.io/badge/Status-Active-green)
 
@@ -6,7 +6,7 @@
 
 The application utilizes multi-threading to ensure high performance, running complex AI inference tasks on a background thread so the graphical interface remains smooth and responsive.
 
-## ✨ Features
+##  Features
 
 * **Real-Time Posture Tracking:** Instantly detects "Slouching" or "Leaning" and provides immediate visual feedback.
 * **Emotion Analysis:** Analyzes facial micro-expressions to detect stress, anger, or fatigue using the `enet_b0` model.
@@ -17,7 +17,7 @@ The application utilizes multi-threading to ensure high performance, running com
 
 ---
 
-## 📂 Project Structure
+##  Project Structure
 
 ```text
 NeuralHealth/
@@ -37,7 +37,7 @@ NeuralHealth/
     └── trainer.py          <-- Training Script
 ```
 
-## 🛠️ Prerequisites
+##  Prerequisites
 
 Before running the system, ensure you have:
 
@@ -47,7 +47,7 @@ Before running the system, ensure you have:
 
 ---
 
-## 🚀 Installation & Setup
+##  Installation & Setup
 
 ### 1. Initial Setup
 * Navigate to the `NeuralHealth` folder.
@@ -64,7 +64,7 @@ Before running the system, ensure you have:
 
 ---
 
-## 🖥️ How to Run
+##  How to Run
 
 * Open your terminal in the project folder.
 * Run the launcher:
@@ -76,7 +76,7 @@ Before running the system, ensure you have:
 
 ---
 
-## ⚙️ Usage Guide
+##  Usage Guide
 
 * **Posture Correction:** If the text turns **RED** and says "Slouching," sit up straight. The text will turn **GREEN** ("Good Posture").
 * **Stress Score:**
@@ -87,7 +87,7 @@ Before running the system, ensure you have:
 
 ---
 
-## ⚠️ Troubleshooting
+##  Troubleshooting
 
 **The app is laggy or slow.**
 * Ensure you are using the "Turbo" version (Multi-threaded).

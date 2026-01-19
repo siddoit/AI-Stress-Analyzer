@@ -7,139 +7,155 @@ import tensorflow as tf
 import os
 import shutil
 import statistics
-import serial          # Reads your ESP32
+import serial
+import serial.tools.list_ports
 from pathlib import Path
 from PIL import Image, ImageTk
 from collections import deque
 import threading
 import time
+from hsemotion.facial_emotions import HSEmotionRecognizer
 
 # --- CONFIGURATION ---
-# IMPORTANT: Check Device Manager for your ESP32 Port!
-ARDUINO_PORT = 'COM10'  
-# Your ESP32 code uses 115200, so Python MUST match it
-BAUD_RATE = 115200     
+BAUD_RATE = 115200      
+HISTORY_LEN = 10        
+SKIP_FRAMES = 5         # OPTIMIZATION: Only run AI every 5 frames
 
-HISTORY_LEN = 5
-SKIP_FRAMES = 3 
+# --- EXERCISE DATABASE ---
+EXERCISES = {
+    "Slouching": ("⬇️ Thoracic Extension", "Sit tall, arms behind head, arch back over chair."),
+    "Leaning": ("⚖️ Spine Re-alignment", "Stand up, reach high, bend side to side."),
+    "High Stress": ("🌬️ Box Breathing", "Inhale 4s, Hold 4s, Exhale 4s, Hold 4s."),
+    "Noise": ("🎧 Auditory Break", "Wear noise-canceling headphones or step out."),
+    "Heat": ("💧 Hydration & Cool Down", "Drink water and check ventilation.")
+}
 
-# System Fixes for Tensorflow/PyTorch
+# System Fixes for Windows/TF
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 _original_load = torch.load
 def fixed_load(*args, **kwargs):
     if 'weights_only' not in kwargs: kwargs['weights_only'] = False
     return _original_load(*args, **kwargs)
 torch.load = fixed_load
-from hsemotion.facial_emotions import HSEmotionRecognizer
 
 # ==========================================
-# 🧠 BACKEND CLASS (THREADED)
+# 🧠 BACKEND (THE BRAIN)
 # ==========================================
 class StressBrain:
     def __init__(self):
-        # --- SHARED VARIABLES (The GUI reads these) ---
+        # Shared Data
         self.latest_pos = "Good Posture"
         self.latest_emo = "Neutral"
-        self.latest_noise = 0
+        self.latest_noise = 40.0
         self.latest_temp = 25.0
         self.latest_hum = 50.0
-        self.frame_to_process = None # The GUI puts frames here
+        
+        # Trend Analysis
+        self.stress_history = deque(maxlen=50) 
+        self.care_prediction = "Stable"
+        
+        self.frame_to_process = None
         self.running = True
         
-        # --- HARDWARE SETUP ---
+        # --- HARDWARE CONNECTION ---
         self.ser = None
-        try:
-            self.ser = serial.Serial(ARDUINO_PORT, BAUD_RATE, timeout=0.1)
-            print(f"✅ Hardware: ESP32 Connected on {ARDUINO_PORT}")
-        except:
-            print(f"⚠️ Hardware: Connection failed (Simulating Data)")
+        self.connect_hardware()
 
-        # --- AI SETUP ---
+        # --- AI LOAD ---
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        
-        # Load Emotion (Your original code)
-        local_pt = 'Models/enet_b0_8_best_vgaf.pt'
-        cache_path = os.path.join(str(Path.home()), '.hsemotion', local_pt)
-        if not os.path.exists(cache_path) and os.path.exists(local_pt):
-            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-            shutil.copy2(local_pt, cache_path)
-            
+        print(f"🚀 AI Running on: {self.device.upper()}")
+
         try:
             self.emo_model = HSEmotionRecognizer(model_name='enet_b0_8_best_vgaf', device=self.device)
-        except: self.emo_model = None
+        except Exception as e:
+            print(f"⚠️ Emotion Model Failed: {e}")
+            self.emo_model = None
 
-        # Load Posture
         try:
             self.posture_model = tf.keras.models.load_model('Models/my_posture_model.h5')
             self.pos_classes = ['Good', 'Slouching', 'Leaning']
-        except: self.posture_model = None
+        except:
+            print("⚠️ Posture Model Failed (Check path)")
+            self.posture_model = None
 
         self.mp_face = mp.solutions.face_detection.FaceDetection(model_selection=0, min_detection_confidence=0.5)
         self.mp_pose = mp.solutions.pose.Pose(model_complexity=0, min_detection_confidence=0.5)
-        self.pos_hist = deque(maxlen=HISTORY_LEN)
+        self.pos_hist = deque(maxlen=5)
+
+    def connect_hardware(self):
+        ports = list(serial.tools.list_ports.comports())
+        target_port = None
+        for p in ports:
+            if "USB" in p.description or "CP210" in p.description:
+                target_port = p.device
+                break
+        
+        if target_port:
+            try:
+                self.ser = serial.Serial(target_port, BAUD_RATE, timeout=0.1)
+                print(f"✅ Hardware Connected: {target_port}")
+            except:
+                print("⚠️ Hardware Found but Busy.")
+        else:
+            print("⚠️ No Hardware Found (Simulation Mode)")
 
     def start(self):
-        """Starts the background worker thread"""
         t = threading.Thread(target=self._worker_loop)
-        t.daemon = True # Kills thread when app closes
+        t.daemon = True
         t.start()
 
     def _worker_loop(self):
-        """This loop runs parallel to the GUI. No lag allowed here."""
+        frame_count = 0
         while self.running:
-            # 1. READ HARDWARE (This used to block your GUI!)
+            # 1. READ HARDWARE
             if self.ser and self.ser.in_waiting > 0:
                 try:
-                    line = self.ser.readline().decode('utf-8').strip()
-                    if "Sound:" in line and "Temp:" in line:
+                    line = self.ser.readline().decode('utf-8', errors='ignore').strip()
+                    if "Sound:" in line:
                         parts = line.split('|')
-                        self.latest_noise = float(parts[0].split(':')[1].replace('dB', '').strip())
-                        self.latest_temp = float(parts[1].split(':')[1].replace('C', '').strip())
+                        self.latest_noise = float(parts[0].split(':')[1].replace('dB', ''))
+                        self.latest_temp = float(parts[1].split(':')[1].replace('C', ''))
                         if len(parts) > 2:
-                            self.latest_hum = float(parts[2].split(':')[1].strip())
+                            self.latest_hum = float(parts[2].split(':')[1].replace('%', ''))
                 except: pass
 
-            # 2. PROCESS AI (Only if there is a new frame waiting)
+            # 2. AI PROCESS (Throttled)
             if self.frame_to_process is not None:
-                # Grab the frame and clear the slot immediately
-                curr_frame = self.frame_to_process.copy() 
-                self.frame_to_process = None 
-                
-                self._run_inference(curr_frame)
-            
-            # Tiny sleep to prevent CPU roasting
+                frame_count += 1
+                if frame_count % SKIP_FRAMES == 0:
+                    curr_frame = self.frame_to_process.copy()
+                    self.frame_to_process = None 
+                    self._run_inference(curr_frame)
+                else:
+                    self.frame_to_process = None 
+
             time.sleep(0.01)
 
     def _run_inference(self, frame):
-        # --- POSTURE ---
+        # Posture
         results = self.mp_pose.process(frame)
         if results.pose_landmarks and self.posture_model:
             lm = []
             for i in range(17):
                 p = results.pose_landmarks.landmark[i]
                 lm.extend([p.x, p.y, p.z, p.visibility])
-            pred = self.posture_model.predict(np.array(lm).reshape(1,-1), verbose=0)
-            pred[0][0] += 0.15 # Bias fix
-            
-            self.pos_hist.append(np.argmax(pred))
-            try: idx = statistics.mode(self.pos_hist)
-            except: idx = np.argmax(pred)
-            self.latest_pos = self.pos_classes[idx]
+            try:
+                pred = self.posture_model.predict(np.array(lm).reshape(1,-1), verbose=0)
+                idx = np.argmax(pred)
+                self.pos_hist.append(idx)
+                self.latest_pos = self.pos_classes[statistics.mode(self.pos_hist)]
+            except: pass
 
-        # --- EMOTION ---
+        # Emotion
         f_res = self.mp_face.process(frame)
         if f_res.detections and self.emo_model:
             d = f_res.detections[0]
             bb = d.location_data.relative_bounding_box
             H, W, _ = frame.shape
             x, y, w, h = int(bb.xmin*W), int(bb.ymin*H), int(bb.width*W), int(bb.height*H)
-            if w > 20:
-                try:
-                    # Fix: Ensure coordinates are within bounds
-                    f_img = frame[max(0,y):min(H,y+h), max(0,x):min(W,x+w)]
-                    self.latest_emo, _ = self.emo_model.predict_emotions(f_img, logits=False)
-                except: pass
-
+            if w > 20 and x >= 0 and y >= 0 and (x+w) <= W and (y+h) <= H:
+                f_img = frame[y:y+h, x:x+w]
+                self.latest_emo, _ = self.emo_model.predict_emotions(f_img, logits=False)
 
 # ==========================================
 # 🖥️ FRONTEND (THE FIX)
@@ -147,160 +163,194 @@ class StressBrain:
 class StressApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-
-        # 1. Start the Brain (Background Thread)
+        self.last_log_time = 0  # <--- FIXED: Added this missing variable
+        
         self.brain = StressBrain()
-        self.brain.start() 
+        self.brain.start()
 
         self.cap = cv2.VideoCapture(0)
-        self.cap.set(3, 640)
-        self.cap.set(4, 480)
         
-        # --- UI LAYOUT ---
-        self.title("AI Ergonomic Stress Analyzer (Turbo)")
-        self.geometry("1100x700")
+        # UI Setup
+        self.title("NeuroErgo: Care Prediction System")
+        self.geometry("1280x720")
         ctk.set_appearance_mode("Dark")
-        ctk.set_default_color_theme("blue")
+        ctk.set_default_color_theme("dark-blue")
 
-        self.grid_columnconfigure(1, weight=1)
+        self.grid_columnconfigure(1, weight=3)
+        self.grid_columnconfigure(2, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        # Sidebar
-        self.sidebar = ctk.CTkFrame(self, width=220, corner_radius=0)
-        self.sidebar.grid(row=0, column=0, sticky="nsew")
+        self._setup_sidebar()
+        self._setup_main_area()
+        self._setup_care_portal()
         
-        ctk.CTkLabel(self.sidebar, text="🧠 NeuralHealth", font=ctk.CTkFont(size=24, weight="bold")).pack(pady=30)
-        
-        self.lbl_temp = self.create_sensor_card("🌡️ Temp/Humid", "Wait...", "#3498db")
-        self.lbl_noise = self.create_sensor_card("🔊 Noise Level", "Wait...", "#3498db")
-        self.lbl_posture = self.create_sensor_card("🪑 Posture", "Active", "gray")
-        self.lbl_emo = self.create_sensor_card("😐 Mood", "Neutral", "gray")
-        
-        ctk.CTkLabel(self.sidebar, text="ESP32 Status:", font=("Arial", 10)).pack(side="bottom", pady=5)
-        self.lbl_conn = ctk.CTkLabel(self.sidebar, text="Connecting..." if self.brain.ser else "SIMULATION", font=("Arial", 10, "bold"), text_color="orange")
-        self.lbl_conn.pack(side="bottom", pady=(0, 20))
-
-        # Main Area
-        self.main_frame = ctk.CTkFrame(self, corner_radius=10, fg_color="transparent")
-        self.main_frame.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
-
-        self.video_frame = ctk.CTkLabel(self.main_frame, text="")
-        self.video_frame.pack(fill="both", expand=True, pady=(0, 20))
-
-        self.bot_frame = ctk.CTkFrame(self.main_frame, height=180, fg_color="#1a1a1a")
-        self.bot_frame.pack(fill="x", side="bottom")
-
-        ctk.CTkLabel(self.bot_frame, text="TOTAL STRESS LEVEL", font=("Arial", 12)).place(x=30, y=25)
-        self.lbl_stress_val = ctk.CTkLabel(self.bot_frame, text="0%", font=("Arial", 45, "bold"), text_color="#00ff00")
-        self.lbl_stress_val.place(x=30, y=55)
-
-        self.lbl_advice = ctk.CTkLabel(self.bot_frame, text="System starting...", font=("Arial", 18), text_color="white", wraplength=550, justify="left")
-        self.lbl_advice.place(x=220, y=50)
-
         self.update_gui()
 
-    def create_sensor_card(self, title, val, color):
-        frame = ctk.CTkFrame(self.sidebar, fg_color="#2b2b2b")
-        frame.pack(pady=10, padx=15, fill="x")
-        ctk.CTkLabel(frame, text=title, font=("Arial", 12, "bold"), text_color="gray").pack(anchor="w", padx=10, pady=(5,0))
-        lbl = ctk.CTkLabel(frame, text=val, font=("Arial", 16), text_color=color)
+    # --- FIXED LOGIC FOR LOGGING ---
+    def log_event(self, message):
+        """Adds a timestamped line to the session health box"""
+        timestamp = time.strftime("%H:%M:%S")
+        self.txt_log.insert("end", f"[{timestamp}] {message}\n")
+        self.txt_log.see("end") 
+
+    def _setup_sidebar(self):
+        self.sidebar = ctk.CTkFrame(self, width=200, corner_radius=0)
+        self.sidebar.grid(row=0, column=0, sticky="nsew")
+        
+        ctk.CTkLabel(self.sidebar, text="⚡ SYSTEM STATUS", font=("Impact", 20)).pack(pady=20)
+        
+        self.lbl_conn = ctk.CTkLabel(self.sidebar, text="SEARCHING...", text_color="orange", font=("Arial", 10, "bold"))
+        self.lbl_conn.pack(pady=(0, 20))
+
+        self.card_temp = self._create_card("TEMP / HUMID", "25°C | 50%", "#00BFFF")
+        self.card_noise = self._create_card("NOISE LEVEL", "40 dB", "#00BFFF")
+        self.card_pos = self._create_card("POSTURE", "Analyzing...", "gray")
+        self.card_emo = self._create_card("EMOTION", "Analyzing...", "gray")
+
+    def _create_card(self, title, val, color):
+        f = ctk.CTkFrame(self.sidebar, fg_color="#1F1F1F")
+        f.pack(pady=8, padx=10, fill="x")
+        ctk.CTkLabel(f, text=title, font=("Arial", 10, "bold"), text_color="gray").pack(anchor="w", padx=10, pady=(5,0))
+        lbl = ctk.CTkLabel(f, text=val, font=("Arial", 14, "bold"), text_color=color)
         lbl.pack(anchor="w", padx=10, pady=(0,5))
         return lbl
 
-    def calculate_stress_and_advice(self, pos, emo, noise, temp, hum):
-        # (This logic stays exactly the same as you had it)
+    def _setup_main_area(self):
+        self.main = ctk.CTkFrame(self, fg_color="transparent")
+        self.main.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
+        
+        self.vid_lbl = ctk.CTkLabel(self.main, text="")
+        self.vid_lbl.pack(fill="both", expand=True, pady=(0, 10))
+
+        self.bot_bar = ctk.CTkFrame(self.main, height=100, fg_color="#111111")
+        self.bot_bar.pack(fill="x")
+        
+        ctk.CTkLabel(self.bot_bar, text="LIVE STRESS INDEX", font=("Arial", 12)).place(x=20, y=10)
+        self.lbl_score = ctk.CTkLabel(self.bot_bar, text="0%", font=("Impact", 40), text_color="green")
+        self.lbl_score.place(x=20, y=35)
+        
+        self.lbl_pred = ctk.CTkLabel(self.bot_bar, text="PREDICTION: Stable", font=("Arial", 16, "bold"), text_color="gray")
+        self.lbl_pred.place(x=150, y=45)
+
+    def _setup_care_portal(self):
+        self.care_frame = ctk.CTkFrame(self, width=250, corner_radius=0)
+        self.care_frame.grid(row=0, column=2, sticky="nsew")
+        
+        ctk.CTkLabel(self.care_frame, text="🏥 CARE PORTAL", font=("Impact", 20)).pack(pady=20)
+        
+        self.rec_box = ctk.CTkFrame(self.care_frame, fg_color="#2B2B2B")
+        self.rec_box.pack(pady=10, padx=10, fill="x")
+        ctk.CTkLabel(self.rec_box, text="RECOMMENDED ACTION", font=("Arial", 11, "bold"), text_color="orange").pack(pady=5)
+        self.lbl_action_title = ctk.CTkLabel(self.rec_box, text="None", font=("Arial", 14, "bold"))
+        self.lbl_action_title.pack()
+        self.lbl_action_desc = ctk.CTkLabel(self.rec_box, text="System is monitoring...", font=("Arial", 12), wraplength=200)
+        self.lbl_action_desc.pack(pady=10)
+
+        ctk.CTkLabel(self.care_frame, text="SESSION HEALTH", font=("Impact", 16)).pack(pady=(30,10))
+        self.txt_log = ctk.CTkTextbox(self.care_frame, height=200)
+        self.txt_log.pack(padx=10, fill="x")
+        self.txt_log.insert("0.0", "System Initialization...\nMonitoring Started.\n")
+
+    def calculate_logic(self):
+        # 1. Get Data
+        pos = self.brain.latest_pos
+        emo = self.brain.latest_emo
+        noise = self.brain.latest_noise
+        temp = self.brain.latest_temp
+        
         score = 0
-        msgs = []
-        color = "#00ff00" 
+        recs = []
+        current_time = time.time()
+        
+        trigger_msg = None 
 
+        # Posture Check
         if "Slouch" in pos: 
-            score += 35
-            msgs.append("Sit up straight!")
-        elif "Lean" in pos: 
             score += 30
-            msgs.append("Correct your spine alignment.")
-
-        if emo in ['Angry', 'Fear', 'Sad', 'Disgust']:
+            recs.append(EXERCISES["Slouching"])
+            trigger_msg = "Posture: Slouching detected"
+        elif "Lean" in pos: 
             score += 25
-            msgs.append("High tension detected. Take deep breaths.")
-        
-        if noise > 65: 
+            recs.append(EXERCISES["Leaning"])
+            trigger_msg = "Posture: Leaning too much"
+            
+        # Emotion Check
+        if emo in ['Angry', 'Fear', 'Sad']: 
+            score += 25
+            recs.append(EXERCISES["High Stress"])
+            if not trigger_msg: trigger_msg = f"Mood: Detected {emo}"
+            
+        # Environment Check
+        if noise > 70: 
             score += 15
-            msgs.append("Noise levels are too high.")
-        
-        if temp > 30: 
+            recs.append(EXERCISES["Noise"])
+            if not trigger_msg: trigger_msg = "Environment: Noise levels high"
+            
+        if temp > 29: 
             score += 10
-            msgs.append(f"It's too hot ({temp}°C).")
-        elif temp < 18 and temp > 10:
-            score += 10
-            msgs.append(f"It's chilly ({temp}°C).")
+            recs.append(EXERCISES["Heat"])
+            if not trigger_msg: trigger_msg = f"Environment: High Temp ({temp}°C)"
             
         score = min(score, 100)
+        
+        # --- CARE PREDICTION ---
+        self.brain.stress_history.append(score)
+        avg_stress = sum(self.brain.stress_history) / len(self.brain.stress_history) if self.brain.stress_history else 0
+        
+        pred_text = "Stable Flow"
+        pred_col = "green"
+        
+        if avg_stress > 60:
+            pred_text = "⚠️ BURNOUT RISK RISING"
+            pred_col = "orange"
+        if avg_stress > 80:
+            pred_text = "🚨 CRITICAL: TAKE A BREAK"
+            pred_col = "red"
+            trigger_msg = "ALERT: Burnout Threshold Reached!"
 
-        if score > 75:
-            color = "#ff0000"
-            main_msg = "⚠️ CRITICAL STRESS"
-        elif score > 40:
-            color = "#ffff00"
-            main_msg = "⚠️ MODERATE STRESS"
-        else:
-            main_msg = "✅ Optimal State"
-            if len(msgs) == 0: msgs.append("Working conditions look good.")
-
-        final_advice = f"{main_msg}: {msgs[0]}" if msgs else main_msg
-        return score, final_advice, color
+        # --- LOGGING WITH COOLDOWN ---
+        if trigger_msg and (current_time - self.last_log_time > 5):
+            self.log_event(trigger_msg)
+            self.last_log_time = current_time
+            
+        return score, recs, pred_text, pred_col
 
     def update_gui(self):
-        """
-        THIS IS THE FIXED LOOP. 
-        It does ZERO heavy math. It just reads variables.
-        """
         ret, frame = self.cap.read()
         if ret:
             frame = cv2.flip(frame, 1)
             
-            # 1. SEND FRAME TO BRAIN (Non-Blocking)
-            # Only send if the brain is ready for a new one
             if self.brain.frame_to_process is None:
                 self.brain.frame_to_process = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-            # 2. READ RESULTS (Instant)
-            # We don't calculate them here. We just ask "What did you find?"
-            pos_txt = self.brain.latest_pos
-            emo_txt = self.brain.latest_emo
-            noise = self.brain.latest_noise
-            temp = self.brain.latest_temp
-            hum = self.brain.latest_hum
-
-            # 3. UPDATE UI LABELS
-            if self.brain.ser:
-                self.lbl_conn.configure(text="CONNECTED", text_color="#00ff00")
+                
+            score, recs, pred_text, pred_col = self.calculate_logic()
             
-            self.lbl_temp.configure(text=f"{temp}°C | {hum:.0f}%")
-            self.lbl_noise.configure(text=f"{noise:.1f} dB", text_color="red" if noise > 65 else "#3498db")
-            self.lbl_posture.configure(text=pos_txt, text_color="red" if "Slouch" in pos_txt else "green")
-            self.lbl_emo.configure(text=emo_txt, text_color="green" if emo_txt in ['Happy', 'Neutral'] else "red")
+            if self.brain.ser: self.lbl_conn.configure(text="CONNECTED (ESP32)", text_color="#00FF00")
+            else: self.lbl_conn.configure(text="SIMULATION MODE", text_color="orange")
 
-            # 4. DRAW OVERLAYS (Visuals only)
-            disp_frame = frame.copy()
-            p_color = (0, 255, 0)
-            if "Slouch" in pos_txt: p_color = (255, 0, 0)
+            self.card_temp.configure(text=f"{self.brain.latest_temp}°C | {self.brain.latest_hum}%")
+            self.card_noise.configure(text=f"{self.brain.latest_noise:.1f} dB")
+            self.card_pos.configure(text=self.brain.latest_pos, text_color="red" if "Slouch" in self.brain.latest_pos else "green")
+            self.card_emo.configure(text=self.brain.latest_emo)
             
-            cv2.putText(disp_frame, f"STATUS: {pos_txt}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, p_color, 2)
-            cv2.putText(disp_frame, f"MOOD: {emo_txt}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+            self.lbl_score.configure(text=f"{score}%", text_color=pred_col)
+            self.lbl_pred.configure(text=pred_text, text_color=pred_col)
 
-            # 5. CALCULATE SCORE
-            score, advice, s_color = self.calculate_stress_and_advice(pos_txt, emo_txt, noise, temp, hum)
-            self.lbl_stress_val.configure(text=f"{score}%", text_color=s_color)
-            self.lbl_advice.configure(text=advice)
+            if recs:
+                top_rec = recs[0]
+                self.lbl_action_title.configure(text=top_rec[0])
+                self.lbl_action_desc.configure(text=top_rec[1])
+            else:
+                self.lbl_action_title.configure(text="All Good")
+                self.lbl_action_desc.configure(text="Maintain current workflow.")
+
+            cv2.putText(frame, f"NET STRESS: {score}%", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255) if score>50 else (0,255,0), 2)
             
-            # 6. SHOW IMAGE
-            img = Image.fromarray(cv2.cvtColor(disp_frame, cv2.COLOR_BGR2RGB))
-            imgtk = ctk.CTkImage(light_image=img, dark_image=img, size=(780, 480))
-            self.video_frame.configure(image=imgtk)
-
-        # Run this FAST (10ms) because it's lightweight now!
-        self.after(10, self.update_gui)
+            img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            imgtk = ctk.CTkImage(light_image=img, dark_image=img, size=(700, 450))
+            self.vid_lbl.configure(image=imgtk)
+        
+        self.after(20, self.update_gui)
 
 if __name__ == "__main__":
     app = StressApp()

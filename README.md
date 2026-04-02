@@ -38,6 +38,8 @@ NeuralHealth/
 │
 └── src/                   <-- Legacy / Database utilities
 
+```
+
 🛠️ Prerequisites
 -----------------
 
@@ -73,7 +75,11 @@ To get the automated mobile alerts working, you need to set up a Telegram Bot an
     
     *   Create a file named exactly .env in the root folder of this project.
         
-    *   Code snippetTELEGRAM\_BOT\_TOKEN=paste\_your\_token\_hereTELEGRAM\_CHAT\_ID=paste\_your\_chat\_id\_here
+    *   Code snippet
+       ````
+        TELEGRAM_BOT_TOKEN=paste your token here
+        TELEGRAM_CHAT_ID=paste your chat id here
+      ````
         
 
 ⚡ Installation & Execution
@@ -118,10 +124,10 @@ We have completely eliminated the need for manual setup.
 🐛 Troubleshooting
 ------------------
 
-*   **"AttributeError: 'StressEngine' object has no attribute 'running'"**Ensure you are using the latest logic.py where threads are started inside the start() method, not \_\_init\_\_().
+*   **"AttributeError: 'StressEngine' object has no attribute 'running'"** Ensure you are using the latest logic.py where threads are started inside the start() method, not \_\_init\_\_().
     
-*   **Camera feed keeps expanding and breaking the UI.**Ensure your index.html has minmax(0, 1fr) set in the CSS Grid template columns.
+*   **Camera feed keeps expanding and breaking the UI.** Ensure your index.html has minmax(0, 1fr) set in the CSS Grid template columns.
     
-*   **Camera opens but the app crashes instantly.**Ensure your weights inside the Models/ folder actually exist and downloaded properly. The engine cannot boot without them.
+*   **Camera opens but the app crashes instantly.** Ensure your weights inside the Models/ folder actually exist and downloaded properly. The engine cannot boot without them.
     
-*   **No Telegram alerts are firing.**Check your .env file. Ensure you actually messaged your newly created bot at least once so it has permission to send you messages.
+*   **No Telegram alerts are firing.** Check your .env file. Ensure you actually messaged your newly created bot at least once so it has permission to send you messages.

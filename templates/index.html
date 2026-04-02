@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Care System Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-base: #09090b;
+            --panel-bg: #18181b;
+            --panel-border: #27272a;
+            --text-primary: #f4f4f5;
+            --text-secondary: #a1a1aa;
+            --accent: #3b82f6;
+            --radius-lg: 20px;
+            --radius-md: 12px;
+        }
+
+        body {
+            margin: 0; 
+            padding: 24px;
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-base); 
+            color: var(--text-primary);
+            height: 100vh; 
+            box-sizing: border-box;
+            display: grid;
+            /* The minmax(0, 1fr) strictly prevents the MJPEG infinite expansion bug */
+            grid-template-columns: 320px minmax(0, 1fr) 360px;
+            grid-template-rows: minmax(0, 1fr);
+            gap: 24px;
+            overflow: hidden;
+        }
+
+        .panel {
+            background: var(--panel-bg); 
+            border-radius: var(--radius-lg);
+            padding: 24px; 
+            display: flex; 
+            flex-direction: column;
+            border: 1px solid var(--panel-border);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            height: 100%;
+            box-sizing: border-box;
+        }
+
+        .section-label { 
+            font-size: 12px; 
+            color: var(--text-secondary); 
+            text-transform: uppercase; 
+            font-weight: 700; 
+            letter-spacing: 1.5px; 
+            margin-bottom: 20px; 
+        }
+
+        /* Left Column: Environment & Telemetry */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .metric-card { 
+            background: #27272a; 
+            padding: 16px; 
+            border-radius: var(--radius-md); 
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            border: 1px solid #3f3f46;
+        }
+        .metric-icon { font-size: 20px; margin-bottom: 8px;}
+        .metric-title { font-size: 11px; color: var(--text-secondary); font-weight: 600; margin-bottom: 4px; }
+        .metric-val { font-size: 22px; font-weight: 800; }
+
+        .chart-container {
+            flex-grow: 1; 
+            position: relative;
+            min-height: 120px;
+            margin-bottom: 24px;
+            background: #27272a;
+            border-radius: var(--radius-md);
+            padding: 10px;
+            border: 1px solid #3f3f46;
+        }
+
+        .controls-wrapper {
+            background: #27272a;
+            padding: 16px;
+            border-radius: var(--radius-md);
+            border: 1px solid #3f3f46;
+            margin-top: auto;
+        }
+
+        .hw-status { 
+            font-size: 14px; 
+            font-weight: 700; 
+            margin-bottom: 16px; 
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .status-dot {
+            width: 10px; height: 10px; border-radius: 50%; background: #555;
+        }
+
+        /* Middle Column: Video */
+        .video-container {
+            background: #000; 
+            border-radius: var(--radius-lg);
+            overflow: hidden; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border: 1px solid var(--panel-border); 
+            box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+            width: 100%;
+            height: 100%;
+        }
+        
+        #video-feed { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: contain; 
+        }
+
+        /* Right Column: Analysis */
+        .stress-monitor {
+            text-align: center; 
+            background: radial-gradient(circle at top, #27272a 0%, var(--panel-bg) 100%);
+            padding: 30px 20px; 
+            border-radius: var(--radius-md); 
+            margin-bottom: 24px; 
+            border: 1px solid #3f3f46;
+        }
+        
+        .score-value { 
+            font-size: 80px; 
+            font-weight: 800; 
+            line-height: 1; 
+            margin: 10px 0; 
+            transition: color 0.4s ease;
+            text-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        .score-pred { font-size: 16px; font-weight: 600; }
+
+        .diagnostics {
+            background: #27272a;
+            border-radius: var(--radius-md);
+            padding: 16px;
+            margin-bottom: 24px;
+            border: 1px solid #3f3f46;
+        }
+
+        .diag-row { 
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #3f3f46;
+        }
+        .diag-row:last-child { border-bottom: none; }
+        .diag-label { color: var(--text-secondary); font-size: 14px; font-weight: 500;}
+        .diag-val { font-weight: 700; font-size: 15px; padding: 4px 10px; border-radius: 6px; background: #3f3f46;}
+
+        .action-card { 
+            background: rgba(245, 158, 11, 0.1); 
+            padding: 16px; 
+            border-radius: var(--radius-md); 
+            border-left: 4px solid #f59e0b; 
+            margin-bottom: 24px;
+        }
+        .action-title { color: #f59e0b; font-weight: 700; font-size: 15px; margin-bottom: 6px;}
+        .action-desc { font-size: 13px; color: var(--text-primary); line-height: 1.5; opacity: 0.9;}
+
+        .terminal { 
+            background-color: #000; 
+            color: #4ade80; 
+            font-family: 'Consolas', monospace; 
+            font-size: 12px; 
+            padding: 16px; 
+            border-radius: var(--radius-md); 
+            flex-grow: 1; 
+            overflow-y: auto; 
+            border: 1px solid #3f3f46; 
+            line-height: 1.6; 
+            margin-top: auto;
+            min-height: 0;
+        }
+
+        .switch-wrap { display: flex; justify-content: space-between; align-items: center; font-size: 14px; font-weight: 600;}
+        .switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #3f3f46; transition: .3s; border-radius: 24px; }
+        .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--accent); }
+        input:checked + .slider:before { transform: translateX(20px); }
+    </style>
+</head>
+<body>
+
+    <div class="panel">
+        <div class="section-label">Atmospherics</div>
+        
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-icon">🌡️</div>
+                <div class="metric-title">TEMP</div>
+                <div class="metric-val" id="val-temp" style="color:#fbbf24;">--°C</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-icon">💧</div>
+                <div class="metric-title">HUMIDITY</div>
+                <div class="metric-val" id="val-hum" style="color:#38bdf8;">--%</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-icon">🔊</div>
+                <div class="metric-title">NOISE</div>
+                <div class="metric-val" id="val-noise" style="color:#f472b6;">-- dB</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-icon">☀️</div>
+                <div class="metric-title">LIGHT</div>
+                <div class="metric-val" id="val-light" style="color:#fcd34d;">-- lx</div>
+            </div>
+        </div>
+
+        <div class="section-label" style="margin-bottom: 10px;">Live Stress Trend</div>
+        <div class="chart-container">
+            <canvas id="stressChart"></canvas>
+        </div>
+
+        <div class="controls-wrapper">
+            <div class="hw-status">
+                <div class="status-dot" id="hw-dot"></div>
+                <span id="hw-status">ESP32 SEARCHING...</span>
+            </div>
+            <div class="switch-wrap">
+                Use Laptop Mic
+                <label class="switch">
+                    <input type="checkbox" id="micToggle" onchange="toggleMic()">
+                    <span class="slider"></span>
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <div class="video-container">
+        <img id="video-feed" src="/video_feed" alt="Camera Feed">
+    </div>
+
+    <div class="panel">
+        <div class="section-label">Care Diagnostics</div>
+        
+        <div class="stress-monitor">
+            <div class="metric-title">NET STRESS LOAD</div>
+            <div class="score-value" id="val-score">0%</div>
+            <div class="score-pred" id="val-pred">Stable State</div>
+        </div>
+
+        <div class="diagnostics">
+            <div class="diag-row">
+                <span class="diag-label">Physical Form</span>
+                <span class="diag-val" id="val-posture">Active</span>
+            </div>
+            <div class="diag-row">
+                <span class="diag-label">Cognitive State</span>
+                <span class="diag-val" id="val-emotion">Neutral</span>
+            </div>
+        </div>
+
+        <div class="action-card">
+            <div class="action-title" id="rec-title">Monitoring...</div>
+            <div class="action-desc" id="rec-desc">System is currently establishing your baseline parameters.</div>
+        </div>
+
+        <div class="section-label" style="margin-bottom: 10px;">System Logs</div>
+        <div class="terminal" id="terminal">Awaiting initialization...</div>
+    </div>
+
+    <script>
+        const ctx = document.getElementById('stressChart').getContext('2d');
+        const stressChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: Array(30).fill(''), 
+                datasets: [{
+                    label: 'Stress Load',
+                    data: Array(30).fill(0),
+                    borderColor: '#ef4444', 
+                    backgroundColor: 'rgba(239, 68, 68, 0.15)', 
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4, 
+                    pointRadius: 0 
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false, 
+                scales: {
+                    y: { min: 0, max: 100, display: false }, 
+                    x: { display: false } 
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: false }
+                },
+                layout: { padding: 0 }
+            }
+        });
+
+        function toggleMic() {
+            const isChecked = document.getElementById('micToggle').checked;
+            fetch('/api/toggle_mic', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({use_laptop_mic: isChecked})
+            });
+        }
+
+        let fetchCount = 0;
+
+        async function fetchData() {
+            try {
+                const response = await fetch('/api/data');
+                const data = await response.json();
+                
+                document.getElementById('val-temp').innerText = data.temp;
+                document.getElementById('val-hum').innerText = data.hum;
+                document.getElementById('val-noise').innerText = data.noise;
+                document.getElementById('val-light').innerText = data.light;
+                
+                document.getElementById('val-score').innerText = data.score + "%";
+                document.getElementById('val-score').style.color = data.pred_color;
+                
+                document.getElementById('val-pred').innerText = data.prediction;
+                document.getElementById('val-pred').style.color = data.pred_color;
+
+                const postureEl = document.getElementById('val-posture');
+                postureEl.innerText = data.posture;
+                postureEl.style.color = data.posture.includes("Slouch") ? "#ef4444" : "#f4f4f5";
+
+                const emoEl = document.getElementById('val-emotion');
+                emoEl.innerText = data.emotion;
+                emoEl.style.color = ['Anger', 'Fear', 'Sadness'].includes(data.emotion) ? "#ef4444" : "#f4f4f5";
+
+                if (data.recs && data.recs.length > 0) {
+                    document.getElementById('rec-title').innerText = data.recs[0][0];
+                    document.getElementById('rec-desc').innerText = data.recs[0][1];
+                }
+
+                const hwStatus = document.getElementById('hw-status');
+                const hwDot = document.getElementById('hw-dot');
+                hwStatus.innerText = "ESP32: " + data.hardware_status;
+                
+                if (data.hardware_status === "CONNECTED") {
+                    hwDot.style.background = "#22c55e"; 
+                } else if (data.hardware_status === "SIMULATION") {
+                    hwDot.style.background = "#f59e0b"; 
+                } else {
+                    hwDot.style.background = "#ef4444"; 
+                }
+
+                const terminal = document.getElementById('terminal');
+                if (terminal.innerText !== data.logs) {
+                    terminal.innerText = data.logs;
+                    terminal.scrollTop = terminal.scrollHeight; 
+                }
+
+                fetchCount++;
+                if (fetchCount % 3 === 0) {
+                    stressChart.data.datasets[0].data.push(data.score);
+                    stressChart.data.datasets[0].data.shift();
+                    stressChart.update();
+                }
+
+            } catch (error) {
+                console.error("Fetch error:", error);
+            }
+        }
+        
+        setInterval(fetchData, 150);
+    </script>
+</body>
+</html>

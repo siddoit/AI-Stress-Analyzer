@@ -1,105 +1,127 @@
-#  NeuralHealth: AI Stress & Ergonomic Analyzer
+# NeuralHealth: AI Edge-Compute Stress & Ergonomic Analyzer
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue) ![TensorFlow](https://img.shields.io/badge/TensorFlow-GPU-orange) ![Status](https://img.shields.io/badge/Status-Active-green)
+![Python](https://img.shields.io/badge/Python-3.12-blue) ![Flask](https://img.shields.io/badge/Flask-Web_App-lightgrey) ![TensorFlow](https://img.shields.io/badge/TensorFlow-GPU-orange) ![Status](https://img.shields.io/badge/Status-Active-green)
 
-**NeuralHealth** is a real-time desktop application designed to monitor ergonomic health and stress levels during computer usage. By combining computer vision for posture and emotion detection with external environmental sensors (ESP32), the system provides a comprehensive "Stress Score" to help users maintain a healthy work environment. 
+**NeuralHealth** is a real-time, edge-AI web dashboard designed to monitor ergonomic health, environmental conditions, and cognitive stress during intense workflow sessions. 
 
-The application utilizes multi-threading to ensure high performance, running complex AI inference tasks on a background thread so the graphical interface remains smooth and responsive.
+Transitioning from a heavy desktop GUI to a lightweight Flask-based web architecture, this system fuses computer vision (posture and facial micro-expressions) with external hardware telemetry (ESP32) to generate a live "Net Stress Load." If you hit a critical burnout threshold, the system triggers local Windows interrupts and fires off Telegram alerts to step you away from the desk.
 
-##  Features
+## 🚀 Core Features
 
-* **Real-Time Posture Tracking:** Instantly detects "Slouching" or "Leaning" and provides immediate visual feedback.
-* **Emotion Analysis:** Analyzes facial micro-expressions to detect stress, anger, or fatigue using the `enet_b0` model.
-* **Environmental Monitoring:** Connects to an ESP32 to track **Room Temp, Humidity, and Noise levels**.
-* **Smart Scoring:** Fuses posture, emotion, and environment data into a single 0-100% Stress Score.
-* **Turbo-Threaded Backend:** Features a dedicated background thread for heavy AI math, ensuring the UI never lags or freezes.
-* **Simulation Mode:** Automatically switches to simulated data if no hardware is detected.
+* **Zero-Latency Web UI:** A premium, dark-mode CSS Grid dashboard that renders your camera feed and telemetry in real-time.
+* **DirectShow Camera Pipeline:** Bypasses Windows buffering for absolute bleeding-edge frame acquisition without the classic OpenCV lag.
+* **Asynchronous AI Engine:** Heavy ML math (MediaPipe for posture, HSEmotion for cognitive state) runs on an isolated background thread to guarantee the UI never freezes.
+* **Hardware Telemetry Fusion:** Connects seamlessly to an ESP32 micro-controller to track **Room Temp, Humidity, Noise, and Light (lx)**.
+* **Burnout Protocols:** Automatically triggers system buzzers, Windows UI interrupts, and Telegram notifications when critical stress is sustained.
+* **Single-Click Boot:** An automated batch script handles virtual environments, massive AI dependencies, and browser launching without manual terminal commands.
 
 ---
 
-##  Project Structure
+## 📂 Architecture & Structure
 
 ```text
 NeuralHealth/
 │
-├── README.md               
-├── launch.py               <-- Main Application Launcher
-├── requirements.txt        <-- Dependencies list
+├── installation.bat       <-- The single-click setup and boot script
+├── run.py                 <-- Threaded launcher (Spins up Flask & opens browser)
+├── app.py                 <-- Flask routing and web server
+├── logic.py               <-- The Brains: AI inference, OpenCV, Serial comms
+├── requirements.txt       <-- Heavily optimized dependency list
+├── .env                   <-- API Keys and Secrets (Local only)
 │
-├── models/                 
+├── templates/             
+│   └── index.html         <-- The Frontend Dashboard
+│
+├── Models/                <-- Local ML Weights
 │   ├── enet_b0_8_best_vgaf.pt
 │   └── my_posture_model.h5
 │
-└── src/                    
-    ├── db.py               <-- Database Handler
-    ├── emo.py              <-- Emotion Logic
-    ├── posture_check.py    <-- Posture Logic
-    └── trainer.py          <-- Training Script
-```
+└── src/                   <-- Legacy / Database utilities
 
-##  Prerequisites
+🛠️ Prerequisites
+-----------------
 
-Before running the system, ensure you have:
+*   **Python 3.12+**: The installation.bat will attempt to install this automatically if you don't have it.
+    
+*   **Webcam**: Required for real-time spatial and emotional mapping.
+    
+*   **ESP32 (Optional)**: For environmental hardware sensing. The system gracefully degrades to "Simulation Mode" if unplugged.
+    
+*   **Telegram Account**: To receive critical load alerts.
+    
 
-* **Python 3.9+**: Installed and added to your system PATH.
-* **Webcam**: Required for posture and emotion detection.
-* **ESP32 (Optional)**: For environmental sensing (Temp/Hum/Noise).
+🔐 Setup: Telegram Bot Integration
+----------------------------------
 
----
+To get the automated mobile alerts working, you need to set up a Telegram Bot and grab your API credentials. Do not skip this if you want the full experience.
 
-##  Installation & Setup
+1.  **Create the Bot:**
+    
+    *   Open Telegram and search for **@BotFather**.
+        
+    *   Send the command /newbot and follow the prompts to name it.
+        
+    *   BotFather will give you an **HTTP API Token** (e.g., 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11). Copy this.
+        
+2.  **Get Your Chat ID:**
+    
+    *   Search for **@RawDataBot** or **@userinfobot** in Telegram and press Start.
+        
+    *   It will output a JSON block. Look for the "chat": {"id": 123456789} line. Copy that number.
+        
+3.  **Configure the Environment:**
+    
+    *   Create a file named exactly .env in the root folder of this project.
+        
+    *   Code snippetTELEGRAM\_BOT\_TOKEN=paste\_your\_token\_hereTELEGRAM\_CHAT\_ID=paste\_your\_chat\_id\_here
+        
 
-### 1. Initial Setup
-* Navigate to the `NeuralHealth` folder.
-* Install the required libraries:
-    ```bash
-    pip install -r requirements.txt
-    ```
+⚡ Installation & Execution
+--------------------------
 
-### 2. Device Setup (Hardware)
-* Connect your ESP32 to the computer via USB.
-* Open `launch.py` in a text editor.
-* Find the line `ARDUINO_PORT = 'COM10'` and change it to your device's port (e.g., `COM3`).
-    > **Note:** If you do not have an ESP32, you can skip this. The system will auto-detect the missing device and enter "Simulation Mode."
+We have completely eliminated the need for manual setup.
 
----
+1.  **Clone/Download** this repository.
+    
+2.  **Double-click installation.bat**.
+    
 
-##  How to Run
+**What the script does automatically:**
 
-* Open your terminal in the project folder.
-* Run the launcher:
-    ```bash
-    python launch.py
-    ```
-* Wait for the **NeuralHealth Dashboard** to open.
-* **Sit back**: The system will calibrate and start tracking your posture and stress levels immediately.
+*   Checks if Python is installed (and downloads it silently if missing).
+    
+*   Builds a highly isolated Virtual Environment (venv).
+    
+*   Installs gigabytes of AI models and dependencies (grab a coffee on the first run).
+    
+*   Drops a .installed marker so it skips the download phase on future boots.
+    
+*   Spins up the Flask server and instantly opens your default browser to http://127.0.0.1:5000.
+    
 
----
+📊 Dashboard Guide
+------------------
 
-##  Usage Guide
+*   **Atmospherics Panel:** Tracks your room's physical condition. You can toggle "Laptop Mic" if you want to bypass the ESP32 for decibel readings.
+    
+*   **Live Stress Trend:** A rolling 30-tick graph showing your real-time cognitive load.
+    
+*   **Care Diagnostics:**
+    
+    *   **Optimal State (Green):** You are locked in. Posture is solid, emotion is neutral/happy.
+        
+    *   **Burnout Risk (Orange):** You are slouching, leaning, or the environment is hostile (too loud, too dark). System issues ergonomic corrections.
+        
+    *   **Critical Load (Red):** Sustained anger/stress combined with physical degradation. Triggers the Telegram alert pipeline and hardware buzzers to force a break.
+        
 
-* **Posture Correction:** If the text turns **RED** and says "Slouching," sit up straight. The text will turn **GREEN** ("Good Posture").
-* **Stress Score:**
-    * **0-40% (Green):** Optimal State.
-    * **40-75% (Yellow):** Moderate Stress.
-    * **75-100% (Red):** Critical Stress. Take a break.
-* **Environment:** If the noise level exceeds 65dB, the system will flag it as a stress factor.
+🐛 Troubleshooting
+------------------
 
----
-
-##  Troubleshooting
-
-**The app is laggy or slow.**
-* Ensure you are using the "Turbo" version (Multi-threaded).
-* Check if another app is using your webcam.
-
-**"Connection Failed" for ESP32.**
-* Check if the `ARDUINO_PORT` in `launch.py` matches your Device Manager.
-* Ensure the Baud Rate is set to `115200`.
-
-**Camera opens but closes immediately.**
-* Verify that `models/enet_b0_8_best_vgaf.pt` exists. If not, the system cannot load the model.
-
----
-
-**Built with:** Python, CustomTkinter, MediaPipe, TensorFlow, & ESP32.
+*   **"AttributeError: 'StressEngine' object has no attribute 'running'"**Ensure you are using the latest logic.py where threads are started inside the start() method, not \_\_init\_\_().
+    
+*   **Camera feed keeps expanding and breaking the UI.**Ensure your index.html has minmax(0, 1fr) set in the CSS Grid template columns.
+    
+*   **Camera opens but the app crashes instantly.**Ensure your weights inside the Models/ folder actually exist and downloaded properly. The engine cannot boot without them.
+    
+*   **No Telegram alerts are firing.**Check your .env file. Ensure you actually messaged your newly created bot at least once so it has permission to send you messages.
